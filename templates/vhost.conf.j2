@@ -46,5 +46,26 @@ ServerName {{ server_name }}
     </Directory>
 {% endfor %}
 {% endif %}
+
+{% if '_locations' in vhost %}
+{% for _location in vhost._locations %}
+    <Location {{ _location['_root'] }}>
+{% for name, value in _location.iteritems() %}
+{% if '_' not in name %}
+{% if value %}
+        {{ name }} {{ value }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if 'extra_directives' in _location %}
+
+{% for line in _location['extra_directives'].rstrip().split('\n') %}
+        {{ line }}
+{% endfor %}
+{% endif %}
+    </Location>
+{% endfor %}
+{% endif %}
+
 </VirtualHost>
 {% endfor %}

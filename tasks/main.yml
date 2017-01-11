@@ -1,40 +1,80 @@
 ---
 # tasks file for jpnewman.apache
+
+- name: Apache pre-checks - check for server_name
+  debug:
+    msg: "Pre-check failed: 'server_name' is undefined"
+  when: server_name is undefined
+  tags: ["apache"]
+
+- name: Apache pre-checks - check for apache_virtualhosts
+  debug:
+    msg: "Pre-check failed: 'apache_virtualhosts' is undefined"
+  when: apache_virtualhosts is undefined
+  tags: ["apache"]
+
+- name: Apache pre-checks - check for create_directories
+  debug: 
+    msg: "Pre-check warn: 'create_directories' is undefined" 
+  when: create_directories is undefined
+  tags: ["apache"]
+
+- name: Apache pre-check - check for create_symlinks
+  debug: 
+    msg: "Pre-check warn: 'create_symlinks'  is undefined" 
+  when: create_symlinks is undefined
+  tags: ["apache"]
+
 - name: Install apache
   apt: name={{ item }} state=present update_cache=yes cache_valid_time={{ apt_cache_valid_time }}
   with_items:
     - apache2
     - apache2-utils
+  tags: ["apache"]
+
+- name: Install apache modules 
+  apt: name={{ item.value }} state=present update_cache=yes cache_valid_time={{ apt_cache_valid_time }}
+  with_dict: "{{ apache_mods_pkgs }}"
+  notify: restart apache
+  tags: ["apache"]
+
 
 - name: Enable modules
   file:
-    src: "{{ apache_path }}/mods-available/{{ item }}"
-    dest: "{{ apache_path }}/mods-enabled/{{ item }}"
+    src: "{{ apache_path }}/mods-available/{{ item }}.load"
+    dest: "{{ apache_path }}/mods-enabled/{{ item }}.load"
     state: link
   with_items: "{{ apache_mods_enabled }}"
   notify: restart apache
+  tags: ["apache"]
 
-- name: Create directory to store ssl crt
-  tags: ["ssl"]
-  file: path={{ ssl_cert_directory }} state=directory
-
-- name: Copy SSL cert
-  tags: ["ssl"]
-  copy: src={{ ssl_cert_local_directory }}/{{ ssl_cert }} dest={{ ssl_cert_directory }}
+- name: Enable conf for modules
+  file:
+    src: "{{ apache_path }}/mods-available/{{ item }}.conf"
+    dest: "{{ apache_path }}/mods-enabled/{{ item }}.conf"
+    state: link
+  with_items: "{{ apache_mods_enabled }}"
+# not all mods come with config files.
+  ignore_errors: yes
   notify: restart apache
+  tags: ["apache"]
+
+- name: Create directories 
+  file:
+    path: "{{ item.dir_path }}"
+    state: directory
+    owner: "{{ item.dir_owner }}"
+    group: "{{ item.dir_group }}"
+    mode: "{{ item.dir_mode }}"
+  with_items: create_directories
+  when: create_directories is defined
+  tags: ["apache"]
 
 - name: Copy SSL key
-  tags: ["ssl"]
+  tags: ["ssl", "apache"]
   copy: src={{ ssl_cert_local_directory }}/{{ ssl_key }} dest={{ ssl_cert_directory }}
+  when: ssl_cert_local_directory is defined
   notify: restart apache
-
-- name: Create apache log directory
-  file:
-    path: "{{ apache_log_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: 0755
 
 - name: Update vhost
   template:
@@ -42,19 +82,34 @@
     dest: "{{ apache_path }}/sites-available/{{ apache_vhosts_file }}"
     owner: root
     group: root
-    mode: 0644
+    mode: "0644"
   notify: restart apache
+  tags: ["apache"]
 
-- name: Enabled vhost
+- name: Enable vhost
   file:
     src: "{{ apache_path }}/sites-available/{{ apache_vhosts_file }}"
     dest: "{{ apache_path }}/sites-enabled/{{ apache_vhosts_file }}"
     state: link
   notify: restart apache
+  tags: ["apache"]
 
-- name: Removing default vhost
+#nb. destination directory must exist.
+- name: Create symlinks
+  file: 
+    src: "{{ item.src_path }}"
+    dest: "{{ item.dest_path }}" 
+    state: link
+  with_items: "{{ create_symlinks }}"
+  when: create_symlinks is defined
+  notify: restart apache
+  tags: ["apache"]
+
+
+- name: Disable default vhost
   file:
     path: "{{ apache_path }}/sites-enabled/{{ apache_default_vhost_file }}"
     state: absent
   notify: restart apache
   when: apache_default_delete_vhost
+  tags: ["apache"]
